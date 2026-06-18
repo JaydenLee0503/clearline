@@ -5,60 +5,121 @@
 // browser bundle.
 //
 // Contract:
-//   POST { "tokenizedText": string }   <- text already scrubbed by the Guardian
-//   200  { "text": string }            <- raw assistant text (JSON as a string)
+//   POST { "tokenizedText": string, "pipelineType"?: string }  <- text already scrubbed by the Guardian
+//   200  { "text": string }           <- raw assistant text (JSON as a string)
 //   4xx/5xx { "error": string, ... }
 //
 // The client (src/agents/simplifier.js) is responsible for parsing/validating the
-// returned text. This function stays deliberately dumb: it forwards tokenized text
-// to the model and returns the model's text. No real PII ever reaches this function
-// because the Guardian runs first, on the device.
+// returned text. This function stays deliberately dumb: it classifies, selects the
+// right pipeline prompt, forwards tokenized text to the model, and returns the
+// model's text. No real PII ever reaches this function because the Guardian runs
+// first, on the device.
 
-// Moved here from the client so the prompt is server-authoritative and cannot be
-// tampered with from the browser.
-const SYSTEM_PROMPT = `You are the Simplifier agent in ResilienceHub, a privacy-first document intelligence system.
+// ─── Keyword classifier ────────────────────────────────────────────────────
+// Mirrors src/agents/pipelines/classifier.js — keep in sync when that file changes.
+const KEYWORD_MAP: Record<string, string[]> = {
+  immigration: ["visa","uscis","daca","i-797","i-485","i-130","i-765","i-912","refugee","asylum","ircc","immigration","biometric","biometrics","deportation","removal","green card","work permit","citizenship","naturalization","a-number","notice to appear","f-1","h-1b","dhs","lawful permanent","advance parole","irpa","prra","sponsorship"],
+  medical:     ["discharge","medication","prescription","diagnosis","treatment","icu","surgery","hospital","physician","dme","durable medical","insurance waiver","prior authorization","titration","feeding pump","wound care","home health","physical therapy","hipaa","eob"],
+  school:      ["scholarship","fafsa","financial aid","enrollment","tuition","suspension","expulsion","disciplinary","iep","accommodations","504 plan","mckinney-vento","student","university","college","school district","osap","student loan","bursary","registrar"],
+  legal:       ["eviction","summons","subpoena","court","judge","hearing","lawsuit","complaint","defendant","plaintiff","garnishment","judgment","appeal","restraining order","warrant","attorney","diversion","probation","restitution","community service"],
+  financial_aid: ["grant","benefit","welfare","snap","ebt","medicaid","chip","ssi","ssdi","disability","unemployment","odsp","ontario works","social assistance","food stamps","housing assistance","income support","tax credit","eitc","gst credit","child benefit"],
+  housing:     ["lease","landlord","tenant","rent","eviction notice","notice to vacate","notice to quit","unlawful detainer","housing court","section 8","housing voucher","deposit","arrears","rent arrears","utility shutoff","habitability","rental agreement","housing authority"],
+  employment:  ["termination","severance","layoff","wrongful dismissal","hr","human resources","employment contract","non-compete","nda","roe","record of employment","employment insurance","workers compensation","labour board","nlrb","eeoc","harassment","discrimination","union","grievance"],
+};
 
-CRITICAL PRIVACY CONTRACT:
-The text you receive has been pre-processed by a Guardian. All personal identifiers have been replaced with deterministic tokens: [SIN_1], [SSN_1], [DATE_1], [AMOUNT_1], [PHONE_1], [POSTAL_1], [HEALTH_1], etc.
-- NEVER attempt to infer or reconstruct real values behind tokens.
-- Use tokens EXACTLY as they appear, unchanged, in your output.
-- Do not add, remove, or alter any brackets or underscores in tokens.
-
-YOUR JOB:
-Analyze the tokenized document and return a single JSON object. No preamble, no markdown fences, no commentary — only valid JSON.
-
-RETURN THIS EXACT STRUCTURE:
-{
-  "docType": "one of: immigration | medical | housing | education | juvenile | legal | unknown",
-  "jurisdiction": "city and province/state, or 'unknown' if not determinable",
-  "summary": "3–5 sentences at grade 6 reading level. Second person ('you'). Use token placeholders where real values appear. Be specific about what this document means for the person reading it.",
-  "urgencyNote": "One sentence: what is the single most important thing to act on, and why.",
-  "actions": [
-    {
-      "id": "action_1",
-      "text": "Plain verb phrase — exactly what to do (e.g. 'Call this number to confirm your appointment')",
-      "deadline": "Token if a specific date applies (e.g. [DATE_1]), or 'no hard deadline — sooner is better', or 'immediate'",
-      "consequence": "Specific consequence if this action is skipped — not vague. Name the real harm.",
-      "urgencyScore": 8
-    }
-  ]
+function classifyDocument(text: string): string {
+  const lower = text.toLowerCase();
+  const scores: Record<string, number> = {};
+  for (const [type, kws] of Object.entries(KEYWORD_MAP)) {
+    scores[type] = kws.filter(kw => lower.includes(kw)).length;
+  }
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  return sorted[0][1] > 0 ? sorted[0][0] : "legal";
 }
 
-RULES FOR ACTIONS:
-- urgencyScore is 1–10; 10 = catastrophic if ignored, 1 = optional
-- Sort actions by urgencyScore descending
-- Every required action explicitly stated in the document must appear
-- consequence must be specific: not 'may affect your status' but 'your DACA expires and you lose FAFSA eligibility'
-- Maximum 8 actions for Phase 0; prioritise the highest-stakes ones
+// ─── Pipeline system prompts ───────────────────────────────────────────────
+// CANONICAL SCHEMA — matches CLAUDE.md §10 exactly.
+// Keep every pipeline prompt in sync with src/agents/pipelines/*.js.
 
-READING LEVEL:
-- Grade 6: short sentences, active voice, common words
-- Avoid: 'pursuant to', 'in accordance with', 'herein', 'aforementioned'
-- Replace with: 'because of', 'following', 'here', 'mentioned above'
-- For teen-directed documents: even simpler — 'This does NOT mean you get kicked out'`;
+const IMMIGRATION_SYSTEM_PROMPT = `You are the Bureaucracy Navigator — a Specialized Crisis Pipeline inside Resilience Hub.
+Your job: read an immigration document and return a calm, structured action plan.
 
-// Allow the browser app to call this function. Lock this down to your deployed
-// origin in production by setting ALLOWED_ORIGIN.
+PRIVACY CONTRACT:
+The document you receive has been pre-processed by a Guardian. Every personal identifier
+has been replaced with a deterministic token: [DATE_1], [AMOUNT_1], [CASE_NUM_1], etc.
+NEVER attempt to infer real values behind tokens. Use tokens EXACTLY as they appear.
+
+Return EXACTLY ONE JSON object. No markdown fences, no prose outside the object, no extra keys.
+Empty arrays are allowed; do not omit any key.
+
+{
+  "pipeline_type": "immigration",
+  "urgency": "low | medium | high | critical",
+  "plain_language_summary": "3-5 sentences at grade-6 level. Second person. State what the document is and the single most important thing the person must know.",
+  "what_matters": ["Key fact or obligation extracted from this document"],
+  "what_happens_if_ignored": ["Specific harm — not 'may affect your status' but 'your DACA expires and you lose FAFSA eligibility on [DATE_1]'"],
+  "what_to_do_next": ["Active-voice instruction starting with a verb. Include token for any date or form number."],
+  "who_can_help": [{ "name": "Organisation name", "contact": "phone or URL", "note": "one sentence — what they help with" }],
+  "checklist": [{ "id": "c1", "text": "Short completable task starting with a verb", "deadline": "[DATE_1] or null" }],
+  "deadlines": [{ "date": "[DATE_1]", "task": "What must happen by this date", "consequence": "What happens if missed" }],
+  "questions_to_ask": ["A question the person should bring to their lawyer or caseworker"],
+  "disclaimer": "This is an AI-generated summary for informational purposes only. It is not legal or immigration advice. Verify all deadlines and decisions with a qualified immigration attorney or accredited representative."
+}
+
+URGENCY RUBRIC (most to least severe):
+1. CRITICAL — status expiration or removal order.
+2. HIGH     — biometric appointment closing; asylum 1-year deadline approaching; fee waiver document gap.
+3. MEDIUM   — upcoming filing; status lapse to FAFSA consequence chain.
+4. LOW      — advisory or informational notice with no imminent deadline.
+
+Extract ALL of the following if present:
+- Deadlines: any date with a filing, appointment, renewal, or response requirement.
+- Biometric appointment: location, date/time window, what to bring.
+- Forms referenced: form number, purpose, where to file.
+- Required evidence/documents: list every item stated or implied.
+- Fee waivers (I-912 or equivalent): income tier requirements, required attachments.
+- Asylum 1-year rule: if entry date appears, flag the 1-year filing window.
+- DACA renewal: flag 150-day advance renewal window.
+- Status lapse to financial aid chain: if status expires, flag FAFSA/aid impact explicitly.
+- Appeal rights: if a denial appears, extract the appeal deadline and process.
+- Consequences of no-show: deportation orders, case abandonment, status lapse.
+
+Grade-6 reading level. Short sentences. Active voice. Second person ("you").`;
+
+const FALLBACK_SYSTEM_PROMPT = `You are a document intelligence assistant inside Resilience Hub.
+Analyze the tokenized document and return ONE JSON object matching this exact shape.
+No markdown fences. No prose outside the object. Empty arrays are allowed; do not omit keys.
+
+{
+  "pipeline_type": "legal",
+  "urgency": "low | medium | high | critical",
+  "plain_language_summary": "",
+  "what_matters": [],
+  "what_happens_if_ignored": [],
+  "what_to_do_next": [],
+  "who_can_help": [{ "name": "", "contact": "", "note": "" }],
+  "checklist": [{ "id": "c1", "text": "", "deadline": null }],
+  "deadlines": [{ "date": "", "task": "", "consequence": "" }],
+  "questions_to_ask": [],
+  "disclaimer": "This is an AI-generated summary for informational purposes only. It is not legal, medical, or financial advice. Verify all decisions with a qualified professional."
+}
+
+Set pipeline_type to whichever best fits the document content.
+Grade-6 reading level. Second person ("you"). Active voice.
+Tokens like [DATE_1] must appear exactly as-is in your output.`;
+
+const PIPELINE_PROMPTS: Record<string, string> = {
+  immigration: IMMIGRATION_SYSTEM_PROMPT,
+  // Add remaining pipelines here as they are built:
+  // medical: MEDICAL_SYSTEM_PROMPT,
+  // school: SCHOOL_SYSTEM_PROMPT,
+  // legal: LEGAL_SYSTEM_PROMPT,
+  // financial_aid: FINANCIAL_AID_SYSTEM_PROMPT,
+  // housing: HOUSING_SYSTEM_PROMPT,
+  // employment: EMPLOYMENT_SYSTEM_PROMPT,
+};
+
+// ─── CORS ──────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
 
 const corsHeaders: Record<string, string> = {
@@ -75,8 +136,8 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// ─── Handler ───────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -87,13 +148,10 @@ Deno.serve(async (req: Request) => {
 
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) {
-    return json(
-      { error: "Server is not configured (missing ANTHROPIC_API_KEY)." },
-      500,
-    );
+    return json({ error: "Server is not configured (missing ANTHROPIC_API_KEY)." }, 500);
   }
 
-  let payload: { tokenizedText?: unknown };
+  let payload: { tokenizedText?: unknown; pipelineType?: unknown };
   try {
     payload = await req.json();
   } catch {
@@ -104,6 +162,11 @@ Deno.serve(async (req: Request) => {
   if (typeof tokenizedText !== "string" || tokenizedText.trim().length === 0) {
     return json({ error: "Field 'tokenizedText' (non-empty string) is required." }, 400);
   }
+
+  // Classify — use client hint if provided, otherwise detect server-side.
+  const requestedType = typeof payload?.pipelineType === "string" ? payload.pipelineType : null;
+  const pipeline_type = requestedType ?? classifyDocument(tokenizedText);
+  const systemPrompt = PIPELINE_PROMPTS[pipeline_type] ?? FALLBACK_SYSTEM_PROMPT;
 
   let anthropicRes: Response;
   try {
@@ -116,13 +179,12 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        system: SYSTEM_PROMPT,
+        max_tokens: 2000,
+        system: systemPrompt,
         messages: [
           {
             role: "user",
-            content:
-              `Analyze this document and return the JSON structure described:\n\n${tokenizedText}`,
+            content: `Analyze this document:\n\n${tokenizedText}`,
           },
         ],
       }),
@@ -145,5 +207,6 @@ Deno.serve(async (req: Request) => {
       ? data.content.find((b: { type?: string }) => b?.type === "text")?.text ?? ""
       : "";
 
+  // Return raw text — client is responsible for parsing and validation.
   return json({ text }, 200);
 });

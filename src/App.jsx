@@ -14,11 +14,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import beaconSource from '../src/Beacon Atlas ver 1.0.1.dc.html?raw';
 
-import UploadZone from './components/UploadZone';
 import CrisisActionRoom from './components/CrisisActionRoom';
+import AuthGate from './components/AuthGate';
+import Dashboard from './components/Dashboard';
 
 import { runGuardian } from './agents/guardian';
 import { runSimplifier } from './agents/simplifier';
+import { clearAccount, getStoredAccount, saveAccount } from './lib/localAccount';
 
 // ─── Beacon Atlas template helpers (unchanged from original) ───────────────
 
@@ -665,16 +667,17 @@ function AnalyzingState({ step = 0 }) {
 // ─── Root component ─────────────────────────────────────────────────────────
 
 export default function App() {
-  const [view, setView] = useState('landing');      // 'landing' | 'upload' | 'analyzing' | 'results'
+  const [account, setAccount] = useState(() => getStoredAccount());
+  const [view, setView] = useState(() => (getStoredAccount() ? 'dashboard' : 'landing'));
   const [analyzeStep, setAnalyzeStep] = useState(0);
-  const [result, setResult] = useState(null);        // { analysis, mappingTable, guardianStats }
+  const [result, setResult] = useState(null);
   const [apiError, setApiError] = useState('');
 
   const hostRef = useRef(null);
   const template = useMemo(buildBeaconTemplate, []);
   useBeaconAnimations(hostRef);
 
-  // Wire landing page "Try" buttons to product entry
+  // Wire landing page "Try" buttons to account entry.
   useEffect(() => {
     if (view !== 'landing') return;
     const host = hostRef.current;
@@ -684,15 +687,28 @@ export default function App() {
       const tryButtons = [...host.querySelectorAll('button')].filter((b) =>
         b.textContent.includes('Try')
       );
-      const handler = () => setView('upload');
+      const handler = () => setView(account ? 'dashboard' : 'login');
       tryButtons.forEach((b) => b.addEventListener('click', handler));
       return () => tryButtons.forEach((b) => b.removeEventListener('click', handler));
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [view]);
+  }, [view, account]);
 
-  const handleText = useCallback(async (rawText) => {
+  const handleLogin = useCallback((nextAccount) => {
+    saveAccount(nextAccount);
+    setAccount(nextAccount);
+    setView('dashboard');
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    clearAccount();
+    setAccount(null);
+    setResult(null);
+    setView('landing');
+  }, []);
+
+  const handleAnalyze = useCallback(async (rawText, pipelineType = 'common', source = 'Uploaded document') => {
     setView('analyzing');
     setAnalyzeStep(0);
     setApiError('');
@@ -707,23 +723,23 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 400));
       setAnalyzeStep(2);
 
-      // Step 2 — Simplifier (API call with TOKENIZED text)
-      const analysis = await runSimplifier(tokenized);
+      // Step 2 — Pipeline analysis (API call with TOKENIZED text)
+      const analysis = await runSimplifier(tokenized, pipelineType);
       setAnalyzeStep(3);
 
       await new Promise((r) => setTimeout(r, 300));
 
       // Step 3 — Re-hydration happens in CrisisActionRoom via rehydrateDeep
-      setResult({ analysis, mappingTable, guardianStats: stats });
+      setResult({ analysis, mappingTable, guardianStats: stats, source, pipelineType });
       setView('results');
     } catch (err) {
       setApiError(err.message ?? 'Something went wrong. Please try again.');
-      setView('upload');
+      setView('dashboard');
     }
   }, []);
 
   const handleReset = useCallback(() => {
-    setView('upload');
+    setView('dashboard');
     setResult(null);
     setApiError('');
   }, []);
@@ -749,10 +765,19 @@ export default function App() {
       </main>
 
       {/* ── Product overlay ── */}
-      {view === 'upload' && (
-        <UploadZone
-          onText={handleText}
+      {view === 'login' && (
+        <AuthGate
+          onLogin={handleLogin}
           onBack={handleBack}
+        />
+      )}
+
+      {view === 'dashboard' && account && (
+        <Dashboard
+          account={account}
+          onAnalyze={handleAnalyze}
+          onBack={handleBack}
+          onLogout={handleLogout}
           initialError={apiError}
         />
       )}
@@ -765,6 +790,7 @@ export default function App() {
           mappingTable={result.mappingTable}
           guardianStats={result.guardianStats}
           onReset={handleReset}
+          onDashboard={handleReset}
         />
       )}
     </>

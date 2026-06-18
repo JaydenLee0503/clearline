@@ -1,80 +1,114 @@
 /**
- * Simplifier — Phase 0 Agent (client side)
+ * simplifier.js — LLM call wrapper
  *
- * Receives TOKENIZED text (all PII already replaced with [KEY_N] tokens) and
- * calls our OWN backend (a Supabase Edge Function), which holds the Anthropic
- * API key and talks to the model. The key never reaches the browser.
+ * SECURITY RULE (CLAUDE.md §9.1):
+ * This module NEVER calls api.anthropic.com directly.
+ * The Anthropic key lives only in the server/Edge Function.
  *
- * The API receives NO real PII. Tokens travel to the model; real values never
- * leave the device. This is verifiable in DevTools: open the Network tab and
- * inspect the outgoing request body — you will see tokens like [DATE_1].
+ * In development : calls http://localhost:3001/api/analyze (server/dev.js)
+ * In production  : calls the Supabase Edge Function via VITE_SUPABASE_URL
  *
- * Configure the endpoint with VITE_ANALYZE_FUNCTION_URL (see .env.example).
- * Defaults to the local Supabase functions dev server.
+ * If VITE_ANALYZE_URL is set, that takes precedence (useful for staging environments).
  */
 
-const ANALYZE_URL =
-  import.meta.env.VITE_ANALYZE_FUNCTION_URL ??
-  'http://localhost:54321/functions/v1/analyze';
+function getAnalyzeUrl() {
+  // Explicit override (staging, custom backend, etc.)
+  if (import.meta.env.VITE_ANALYZE_URL) return import.meta.env.VITE_ANALYZE_URL;
 
-// Supabase requires the anon key to invoke functions when JWT verification is on.
-// Optional for local `--no-verify-jwt`; set it for deployed environments.
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  // Development: Vite dev server → local Node server
+  if (import.meta.env.DEV) return 'http://localhost:3001/api/analyze';
+
+  // Production: Supabase Edge Function
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    console.error(
+      '[simplifier] VITE_SUPABASE_URL is not set. ' +
+      'Add it to .env or set VITE_ANALYZE_URL to point to your backend.'
+    );
+  }
+  return `${supabaseUrl}/functions/v1/analyze`;
+}
 
 /**
- * @param {string} tokenizedText  — Guardian output (no real PII)
- * @returns {Promise<object>}     — structured analysis object
+ * Run the analysis pipeline server-side.
+ *
+ * The server receives tokenized text (no real PII), classifies the document,
+ * runs the appropriate Specialized Crisis Pipeline prompt, and returns a
+ * canonical schema object (CLAUDE.md §10).
+ *
+ * @param {string} tokenizedText   — Guardian output (tokens, no real PII)
+ * @param {string} [pipelineType]  — optional override; server classifies if omitted
+ * @returns {Promise<object>}      — canonical schema (pipeline_type, urgency, …)
  */
-export async function runSimplifier(tokenizedText) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (ANON_KEY) {
-    headers.Authorization = `Bearer ${ANON_KEY}`;
-    headers.apikey = ANON_KEY;
-  }
+export async function runSimplifier(tokenizedText, pipelineType) {
+  const url = getAnalyzeUrl();
 
   let response;
   try {
-    response = await fetch(ANALYZE_URL, {
+    response = await fetch(url, {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ tokenizedText }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenizedText, pipelineType }),
     });
   } catch (err) {
-    throw new Error(
-      'Could not reach the analysis service. Is the backend running? ' +
-        `(${err.message})`
-    );
+    // Network error — dev server probably isn't running
+    if (import.meta.env.DEV) {
+      throw new Error(
+        'Could not reach the dev server at http://localhost:3001. ' +
+        'Run "npm run dev:server" in a separate terminal (or "npm run dev:all").'
+      );
+    }
+    throw new Error('Could not reach the analysis service. Please try again.');
   }
 
   if (!response.ok) {
-    let detail = '';
+    let message = `Analysis service error (${response.status})`;
     try {
       const body = await response.json();
-      detail = body.error || body.detail || '';
-    } catch {
-      detail = await response.text().catch(() => '');
-    }
-    throw new Error(`Analysis service error ${response.status}: ${String(detail).slice(0, 200)}`);
+      if (body.error) message = body.error;
+    } catch { /* ignore parse error */ }
+    throw new Error(message);
   }
 
-  const { text: raw = '' } = await response.json();
+  const analysis = await response.json();
 
-  // Strip any accidental markdown fences
-  const clean = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+  // Validate the canonical schema (CLAUDE.md §10)
+  validateSchema(analysis);
 
-  try {
-    const parsed = JSON.parse(clean);
+  return analysis;
+}
 
-    // Minimal validation
-    if (!parsed.docType || !Array.isArray(parsed.actions)) {
-      throw new Error('Unexpected response shape from Simplifier.');
+/**
+ * Validate that the server returned a conforming canonical schema.
+ * Throws if critical fields are missing. Logs warnings for empty arrays.
+ *
+ * @param {object} obj
+ */
+function validateSchema(obj) {
+  const REQUIRED_KEYS = [
+    'pipeline_type', 'urgency', 'plain_language_summary',
+    'what_matters', 'what_happens_if_ignored', 'what_to_do_next',
+    'who_can_help', 'checklist', 'deadlines', 'questions_to_ask', 'disclaimer',
+  ];
+
+  const VALID_PIPELINE_TYPES = [
+    'immigration', 'medical', 'school', 'legal', 'financial_aid', 'housing', 'employment', 'common',
+  ];
+
+  const VALID_URGENCY = ['low', 'medium', 'high', 'critical'];
+
+  for (const key of REQUIRED_KEYS) {
+    if (!(key in obj)) {
+      throw new Error(`Analysis response is missing required field: "${key}". Please try again.`);
     }
+  }
 
-    return parsed;
-  } catch (err) {
-    console.error('Simplifier parse error. Raw response:', raw);
-    throw new Error(
-      'Could not parse the analysis. The document may be too short or in an unsupported format.'
-    );
+  if (!VALID_PIPELINE_TYPES.includes(obj.pipeline_type)) {
+    console.warn(`[simplifier] Unexpected pipeline_type: "${obj.pipeline_type}"`);
+  }
+
+  if (!VALID_URGENCY.includes(obj.urgency)) {
+    console.warn(`[simplifier] Unexpected urgency: "${obj.urgency}"`);
+    obj.urgency = 'medium'; // safe default
   }
 }
