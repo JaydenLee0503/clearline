@@ -1,6 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { PIPELINES } from '../data/pipelines';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PIPELINES, PIPELINE_LABELS } from '../data/pipelines';
 import { ProductNav } from './AuthGate';
+import { listReports, deleteReport } from '../lib/reports';
 
 const gmailSamples = [
   { id: 'g1', from: 'USCIS Updates', subject: 'Biometrics appointment reminder', body: 'USCIS reminder: Your biometrics appointment is scheduled for August 12, 2026. Bring your appointment notice and photo identification. Missing the appointment may delay your case.' },
@@ -8,7 +9,7 @@ const gmailSamples = [
   { id: 'g3', from: 'Hospital Discharge Team', subject: 'Follow-up care instructions', body: 'Please schedule a follow-up appointment within 7 days. Call the nurse line if breathing symptoms get worse or medication doses are missed.' },
 ];
 
-export default function Dashboard({ account, onAnalyze, onBack, onLogout, initialError }) {
+export default function Dashboard({ account, onAnalyze, onBack, onLogout, onOpenReport, initialError }) {
   const [selectedPipeline, setSelectedPipeline] = useState('common');
   const [inputMode, setInputMode] = useState('document');
   const [text, setText] = useState('');
@@ -16,7 +17,30 @@ export default function Dashboard({ account, onAnalyze, onBack, onLogout, initia
   const [selectedEmail, setSelectedEmail] = useState(gmailSamples[0].id);
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState(initialError || '');
+  const [reports, setReports] = useState([]);
+  const [reportsBusy, setReportsBusy] = useState(true);
   const fileInput = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    listReports()
+      .then((rows) => { if (active) setReports(rows); })
+      .catch((err) => console.warn('[dashboard] load reports failed:', err.message))
+      .finally(() => { if (active) setReportsBusy(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function removeReport(id, event) {
+    event.stopPropagation();
+    const previous = reports;
+    setReports((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await deleteReport(id);
+    } catch (err) {
+      setReports(previous); // restore on failure
+      setError('Could not delete that report. Please try again.');
+    }
+  }
 
   const pipeline = useMemo(() => PIPELINES.find((item) => item.id === selectedPipeline) ?? PIPELINES.at(-1), [selectedPipeline]);
   const selectedGmail = gmailSamples.find((item) => item.id === selectedEmail) ?? gmailSamples[0];
@@ -136,6 +160,31 @@ export default function Dashboard({ account, onAnalyze, onBack, onLogout, initia
           )}
 
           {error && <div className="inline-error">{error}</div>}
+
+          {(reportsBusy || reports.length > 0) && (
+            <section className="reports-panel">
+              <div className="reports-head">
+                <span className="mono-kicker">Your saved reports</span>
+                {!reportsBusy && <span>{reports.length}</span>}
+              </div>
+              {reportsBusy ? (
+                <p className="reports-empty">Loading your reports…</p>
+              ) : (
+                <div className="reports-list">
+                  {reports.map((r) => (
+                    <div key={r.id} className="report-row" onClick={() => onOpenReport?.(r)}>
+                      <span className={`report-orb urgency-${r.urgency || 'medium'}`} />
+                      <span className="report-main">
+                        <strong>{r.source || 'Untitled document'}</strong>
+                        <small>{(PIPELINE_LABELS[r.pipeline_type] || r.pipeline_type)} · {new Date(r.created_at).toLocaleDateString()}</small>
+                      </span>
+                      <button className="report-del" onClick={(e) => removeReport(r.id, e)}>Delete</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </section>
       </main>
     </div>

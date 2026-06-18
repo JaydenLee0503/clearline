@@ -625,6 +625,122 @@ body {
   background: rgba(239, 68, 68, 0.08);
 }
 
+/* ── Auth extras ──────────────────────────────────────────────────────────── */
+.inline-notice {
+  border: 1px solid rgba(91, 140, 255, 0.28);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: #c4d0ff;
+  background: rgba(91, 140, 255, 0.09);
+  font-size: 13px;
+}
+
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #5b8cff;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── Saved reports ────────────────────────────────────────────────────────── */
+.reports-panel {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.reports-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reports-head .mono-kicker {
+  margin-bottom: 0;
+}
+
+.reports-head > span {
+  font-size: 13px;
+  color: #5a637c;
+}
+
+.reports-empty {
+  margin: 12px 0 0;
+  color: #5a637c;
+  font-size: 14px;
+}
+
+.reports-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.report-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.report-row:hover {
+  border-color: rgba(91, 140, 255, 0.4);
+  background: rgba(91, 140, 255, 0.06);
+}
+
+.report-orb {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #fbbf24;
+}
+
+.report-orb.urgency-critical { background: #f87171; box-shadow: 0 0 10px #f87171; }
+.report-orb.urgency-high     { background: #fb923c; }
+.report-orb.urgency-medium   { background: #fbbf24; }
+.report-orb.urgency-low      { background: #4ade80; }
+
+.report-main strong {
+  display: block;
+  font-size: 14px;
+  color: #eef1f7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-main small {
+  display: block;
+  margin-top: 2px;
+  color: #98a2bb;
+  font-size: 12px;
+}
+
+.report-del {
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.06);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.report-del:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
 @media (max-width: 900px) {
   .auth-grid,
   .dashboard-grid,

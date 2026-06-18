@@ -20,7 +20,9 @@ import Dashboard from './components/Dashboard';
 
 import { runGuardian } from './agents/guardian';
 import { runSimplifier } from './agents/simplifier';
-import { clearAccount, getStoredAccount, saveAccount } from './lib/localAccount';
+import { rehydrateDeep } from './agents/rehydrate';
+import { supabase } from './lib/supabaseClient';
+import { saveReport } from './lib/reports';
 
 // ─── Beacon Atlas template helpers (unchanged from original) ───────────────
 
@@ -599,15 +601,14 @@ const STEPS = [
 function AnalyzingState({ step = 0 }) {
   return (
     <div
+      className="product-shell"
       style={{
         minHeight: '100vh',
-        background: 'radial-gradient(circle at 22% 12%, rgba(91,140,255,.24), transparent 30%), radial-gradient(circle at 88% 0%, rgba(160,107,255,.18), transparent 28%), #06070e',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 34,
-        fontFamily: "'Archivo', 'D-DIN Bold', system-ui, sans-serif",
         color: '#eef1f7',
         padding: 24,
       }}
@@ -641,9 +642,9 @@ function AnalyzingState({ step = 0 }) {
         <span style={{ display:'block', marginBottom:12, color:'#5b8cff', fontFamily:"'IBM Plex Mono',monospace", fontSize:12, letterSpacing:'.18em', textTransform:'uppercase' }}>
           Secure pipeline in motion
         </span>
-        <p style={{ margin: '0 0 8px', fontSize: 'clamp(34px,5vw,58px)', lineHeight: .98, fontWeight: 900, textTransform:'uppercase', letterSpacing:'.01em' }}>
-          Analyzing your document.
-        </p>
+        <h1 style={{ margin: '0 0 8px', fontFamily:"'Archivo','D-DIN Bold',system-ui,sans-serif", fontSize: 'clamp(34px,5vw,58px)', lineHeight: .98, fontWeight: 900, textTransform:'uppercase', letterSpacing:'.01em' }}>
+          Analyzing your document
+        </h1>
         <p style={{ margin: 0, fontSize: 15, color: '#98a2bb', lineHeight:1.6 }}>
           {STEPS[Math.min(step, STEPS.length - 1)].sub}
         </p>
@@ -693,9 +694,18 @@ function AnalyzingState({ step = 0 }) {
 
 // ─── Root component ─────────────────────────────────────────────────────────
 
+function toAccount(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.user_metadata?.name || (user.email ? user.email.split('@')[0] : 'You'),
+  };
+}
+
 export default function App() {
-  const [account, setAccount] = useState(() => getStoredAccount());
-  const [view, setView] = useState(() => (getStoredAccount() ? 'dashboard' : 'landing'));
+  const [account, setAccount] = useState(null);
+  const [view, setView] = useState('landing');
   const [analyzeStep, setAnalyzeStep] = useState(0);
   const [result, setResult] = useState(null);
   const [apiError, setApiError] = useState('');
@@ -703,6 +713,34 @@ export default function App() {
   const hostRef = useRef(null);
   const template = useMemo(buildBeaconTemplate, []);
   useBeaconAnimations(hostRef, view === 'landing');
+
+  // ── Supabase auth session: hydrate on load + react to sign in/out ──────────
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      const user = data.session?.user ?? null;
+      if (user) {
+        setAccount(toAccount(user));
+        setView((v) => (v === 'landing' || v === 'login' ? 'dashboard' : v));
+      }
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user ?? null;
+      setAccount(toAccount(user));
+      if (user) {
+        setView((v) => (v === 'landing' || v === 'login' ? 'dashboard' : v));
+      } else {
+        setResult(null);
+        setView('landing');
+      }
+    });
+
+    return () => { active = false; sub.subscription.unsubscribe(); };
+  }, []);
 
   // Wire landing page "Try" buttons to account entry.
   useEffect(() => {
@@ -722,14 +760,8 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [view, account]);
 
-  const handleLogin = useCallback((nextAccount) => {
-    saveAccount(nextAccount);
-    setAccount(nextAccount);
-    setView('dashboard');
-  }, []);
-
-  const handleLogout = useCallback(() => {
-    clearAccount();
+  const handleLogout = useCallback(async () => {
+    if (supabase) await supabase.auth.signOut();
     setAccount(null);
     setResult(null);
     setView('landing');
@@ -756,9 +788,15 @@ export default function App() {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      // Step 3 — Re-hydration happens in CrisisActionRoom via rehydrateDeep
+      // Step 3 — Re-hydrate on device, render, and persist the structured plan.
       setResult({ analysis, mappingTable, guardianStats: stats, source, pipelineType });
       setView('results');
+
+      // Best-effort save (real values, owner-scoped via RLS). Never blocks the UI.
+      const rehydrated = rehydrateDeep(analysis, mappingTable);
+      saveReport({ source, analysis: rehydrated }).catch((err) =>
+        console.warn('[app] Could not save report:', err.message)
+      );
     } catch (err) {
       setApiError(err.message ?? 'Something went wrong. Please try again.');
       setView('dashboard');
@@ -779,6 +817,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  const handleOpenReport = useCallback((report) => {
+    // Saved reports are already re-hydrated; no mapping table needed.
+    setResult({ analysis: report.analysis, mappingTable: null, guardianStats: null, source: report.source });
+    setView('results');
+  }, []);
+
   return (
     <>
       {/* ── Landing page (always mounted, hidden when not active) ── */}
@@ -793,10 +837,7 @@ export default function App() {
 
       {/* ── Product overlay ── */}
       {view === 'login' && (
-        <AuthGate
-          onLogin={handleLogin}
-          onBack={handleBack}
-        />
+        <AuthGate onBack={handleBack} />
       )}
 
       {view === 'dashboard' && account && (
@@ -805,6 +846,7 @@ export default function App() {
           onAnalyze={handleAnalyze}
           onBack={handleBack}
           onLogout={handleLogout}
+          onOpenReport={handleOpenReport}
           initialError={apiError}
         />
       )}
