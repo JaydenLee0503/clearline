@@ -56,13 +56,17 @@ async function loadPipelines() {
   const { classifyDocument } = await import('../src/agents/pipelines/classifier.js');
   const { SYSTEM_PROMPT: immigrationPrompt, enrichResponse: immigrationEnrich } =
     await import('../src/agents/pipelines/immigration.js');
+  const { SYSTEM_PROMPT: medicalPrompt, enrichResponse: medicalEnrich } =
+    await import('../src/agents/pipelines/medical.js');
 
   const PIPELINE_PROMPTS = {
     immigration: immigrationPrompt,
+    medical: medicalPrompt,
   };
 
   const PIPELINE_ENRICH = {
     immigration: immigrationEnrich,
+    medical: medicalEnrich,
   };
 
   const FALLBACK_PROMPT = `

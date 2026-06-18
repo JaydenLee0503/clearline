@@ -267,7 +267,7 @@ function PrivacyTrace({ guardianStats }) {
         : 'Personal identifiers were swapped for [DATE_1]-style tokens in your browser.',
     },
     { tag: 'Sent', title: 'Only tokens left', sub: 'The AI received the tokenized text — never your real names, dates, or amounts.' },
-    { tag: 'Analyzed', title: 'No raw copy stored', sub: 'The document runs through analysis in memory; the raw text is not logged or kept.' },
+    { tag: 'Analyzed', title: 'Raw document not stored', sub: 'Your original file is never uploaded; only the tokenized text is processed.' },
     { tag: 'On device', title: 'Re-hydrated locally', sub: 'Tokens were turned back into your real values only here, for you.' },
   ];
 
@@ -277,8 +277,8 @@ function PrivacyTrace({ guardianStats }) {
         <span className="report-flow-lock" aria-hidden="true">
           <svg width="13" height="14" viewBox="0 0 13 14" fill="none"><path d="M3 6V4a3.5 3.5 0 117 0v2" stroke="currentColor" strokeWidth="1.4"/><rect x="1.5" y="6" width="10" height="7" rx="0" stroke="currentColor" strokeWidth="1.4"/></svg>
         </span>
-        <span className="report-flow-title">Your personal data was not recorded during this analysis</span>
-        <span className="report-flow-badge report-mono">Zero-retention</span>
+        <span className="report-flow-title">Your real identifiers never reached the AI</span>
+        <span className="report-flow-badge report-mono">PII tokenized</span>
       </div>
       <ol className="report-flow-steps">
         {steps.map((s, i) => (
@@ -290,7 +290,7 @@ function PrivacyTrace({ guardianStats }) {
           </li>
         ))}
       </ol>
-      <p className="report-flow-foot report-mono">Verify it yourself: open DevTools → Network and inspect the request — it contains tokens, not your data.</p>
+      <p className="report-flow-foot report-mono">Only your structured plan is saved — privately to your account, visible to no one but you, and deletable anytime. The raw document is not kept. Verify the AI boundary in DevTools → Network: the request carries tokens, not your data.</p>
     </section>
   );
 }
