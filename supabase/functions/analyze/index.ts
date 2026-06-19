@@ -369,6 +369,61 @@ READING LEVEL:
 
 ALWAYS include a disclaimer. The disclaimer text must be professional and neutral.`;
 
+// Mirrors src/agents/pipelines/employment.js SYSTEM_PROMPT — keep in sync.
+const EMPLOYMENT_SYSTEM_PROMPT = `You are the Workplace Rights Navigator — a Specialized Crisis Pipeline inside Resilience Hub.
+Your job: read an employment document (job contract, termination or layoff notice, severance
+offer, HR policy, non-compete/NDA/arbitration agreement, or a final-pay dispute) and return a
+calm, structured action plan.
+
+SAFETY CONTRACT (read first):
+- You are NOT a lawyer. NEVER give legal advice or tell the person to sign or not sign. Only explain what the document says and what signing would give up.
+- If the document asks the person to sign away a right (to sue, to a jury, to work in a field), make that explicit, and tell them they can have a lawyer review it before they sign.
+- Always surface deadlines that affect money or rights (severance window, unemployment filing, benefits enrollment, complaint deadline) and what happens if they pass.
+
+PRIVACY CONTRACT:
+The document has been pre-processed by a Guardian. Every personal identifier is a token: [DATE_1], [AMOUNT_1], [PHONE_1], etc.
+- NEVER infer real values behind tokens. Use tokens EXACTLY as they appear.
+
+OUTPUT CONTRACT:
+Return EXACTLY ONE JSON object. No markdown fences, no prose outside the object, no extra keys. Empty arrays are allowed; do not omit any key.
+
+{
+  "pipeline_type": "employment",
+  "urgency": "low | medium | high | critical",
+  "plain_language_summary": "3–5 sentences at grade-6 level. Second person ('you'). State the document type and the single most important thing the person must know.",
+  "what_matters": ["Plain string — the key term, deadline, or right from this document"],
+  "what_happens_if_ignored": ["Plain string — specific harm ('if you sign by [DATE_1], you give up the right to sue the company for how you were fired')."],
+  "what_to_do_next": ["Plain active-voice instruction. Start with a verb. Include the token for any date, amount, or phone number."],
+  "who_can_help": [{ "name": "Organisation name", "contact": "phone or URL", "note": "one sentence — what they help with" }],
+  "checklist": [{ "id": "c1", "text": "Short completable task — start with a verb", "deadline": "[DATE_1] or null" }],
+  "deadlines": [{ "date": "[DATE_1]", "task": "What must happen by this date", "consequence": "What happens if missed" }],
+  "questions_to_ask": ["A question the person should bring to an employment lawyer or labor board"],
+  "disclaimer": "This is an AI-generated summary for informational purposes only. It is not legal advice. Before you sign anything or let a deadline pass, have an employment lawyer or your local labor board review your rights."
+}
+
+EMPLOYMENT URGENCY RUBRIC (rank consequences in this order):
+1. CRITICAL — a deadline within days to sign or respond where acting (or not acting) is hard to undo: a severance release that gives up your right to sue, or a window to file for unemployment/EI that you could miss.
+2. HIGH — a severance review/revocation window is closing, a benefits (COBRA) enrollment deadline is near, or a complaint-filing deadline is approaching.
+3. MEDIUM — a contract, policy, or agreement to review before you sign, with a longer window.
+4. LOW — an informational notice with no imminent deadline.
+If ANY item is CRITICAL, set urgency = "critical". If the highest is HIGH, set urgency = "high". Otherwise medium or low.
+
+Extract ALL of the following if present:
+- Deadlines: the date to sign or respond, a severance review window (often 21 or 45 days) and any revocation period (often 7 days), the unemployment/EI filing window, a benefits/COBRA enrollment date, and any complaint-filing deadline. These are the most important fields.
+- What you are being asked to sign and what it gives up: a release of claims (right to sue), a non-compete, an NDA, or a forced-arbitration clause — name each in plain words.
+- Severance: the amount and any conditions to receive it (token amounts as-is).
+- Final pay: unpaid wages, overtime, or unused vacation owed (token amounts).
+- Benefits: health insurance end date, COBRA continuation, and retirement/401(k) impact.
+- Your rights: the right to have a lawyer review it, to file a complaint, and protection from retaliation for doing so.
+- Who to contact: an employment lawyer, the labor board, EEOC, or your unemployment office.
+
+READING LEVEL:
+- Grade 6. Short sentences. Active voice. Second person ('you').
+- Replace 'release of claims', 'in consideration of', 'non-compete', 'arbitration', 'at-will' with plain words: 'a promise not to sue', 'in exchange for', 'a promise not to work for rivals', 'giving up your right to a court and jury', 'they can fire you for almost any reason'.
+- Never use a legal or HR term without saying what it means for the reader.
+
+ALWAYS include a disclaimer. The disclaimer text must be professional and neutral.`;
+
 const FALLBACK_SYSTEM_PROMPT = `You are a document intelligence assistant inside Resilience Hub.
 Analyze the tokenized document and return ONE JSON object matching this exact shape.
 No markdown fences. No prose outside the object. Empty arrays are allowed; do not omit keys.
@@ -406,8 +461,7 @@ const PIPELINE_PROMPTS: Record<string, string> = {
   housing: HOUSING_SYSTEM_PROMPT,
   financial_aid: FINANCIAL_AID_SYSTEM_PROMPT,
   school: SCHOOL_SYSTEM_PROMPT,
-  // Add remaining pipelines here as they are built:
-  // employment: EMPLOYMENT_SYSTEM_PROMPT,
+  employment: EMPLOYMENT_SYSTEM_PROMPT,
 };
 
 // ─── CORS ──────────────────────────────────────────────────────────────────
@@ -519,8 +573,9 @@ Deno.serve(async (req: Request) => {
   // always receives a ready-to-render object — same contract as server/dev.js.
   const parsed = parseModelJson(rawText);
   const final = normalizeAnalysis(parsed, pipeline_type);
+  const enriched = enrichWhoCanHelp(final, pipeline_type);
 
-  return json(final, 200);
+  return json(enriched, 200);
 });
 
 // ─── Follow-up chat handler ────────────────────────────────────────────────
@@ -619,4 +674,118 @@ function normalizeAnalysis(
         ? v.disclaimer
         : "This is an AI-generated summary for informational purposes only. It is not legal, medical, or immigration advice. Verify all deadlines and decisions with a qualified professional.",
   };
+}
+
+// ─── Curated who_can_help resources ────────────────────────────────────────
+// Mirrors the WHO_CAN_HELP_RESOURCES arrays in src/agents/pipelines/*.js, so
+// production matches the dev server's enrichResponse(). Keep in sync.
+type Resource = { name: string; contact: string; note: string; jurisdiction: string };
+
+const PIPELINE_RESOURCES: Record<string, Resource[]> = {
+  immigration: [
+    { name: 'USCIS Contact Center', contact: '1-800-375-5283 | uscis.gov', note: 'Check case status, reschedule biometrics, ask about your specific form.', jurisdiction: 'us' },
+    { name: 'Immigration Legal Resource Center (ILRC)', contact: 'ilrc.org', note: 'Free legal guides, self-help tools, and referrals to local legal aid.', jurisdiction: 'us' },
+    { name: 'National Immigration Law Center (NILC)', contact: 'nilc.org', note: 'Policy advocacy, Know Your Rights guides, and legal referrals.', jurisdiction: 'us' },
+    { name: 'American Immigration Council', contact: 'americanimmigrationcouncil.org', note: 'Pro bono legal referrals and immigration court resources.', jurisdiction: 'us' },
+    { name: 'CLINIC (Catholic Legal Immigration Network)', contact: '1-301-434-2750 | cliniclegal.org', note: 'Accredited immigration legal services across the US.', jurisdiction: 'us' },
+    { name: 'IRCC (Immigration, Refugees and Citizenship Canada)', contact: '1-888-242-2100 | ircc.canada.ca', note: 'Check application status, book appointments, update your address.', jurisdiction: 'ca' },
+    { name: 'CLEO (Community Legal Education Ontario)', contact: 'cleo.on.ca', note: 'Plain-language legal guides for Ontario residents, including immigration.', jurisdiction: 'ca' },
+    { name: 'OCASI (Ontario Council of Agencies Serving Immigrants)', contact: 'ocasi.org', note: 'Connects newcomers to settlement services, legal aid, and community support.', jurisdiction: 'ca' },
+    { name: 'UNHCR (UN Refugee Agency)', contact: 'unhcr.org/help', note: 'Refugee registration, resettlement referrals, and country-specific guidance.', jurisdiction: 'international' },
+  ],
+  medical: [
+    { name: 'Emergency services', contact: 'Call your local emergency number (911 in the US/Canada)', note: 'Use for any life-threatening symptom — trouble breathing, chest pain, stroke signs, or heavy bleeding.', jurisdiction: 'international' },
+    { name: '988 Suicide & Crisis Lifeline', contact: 'Call or text 988', note: 'Free, 24/7 support for thoughts of self-harm or a mental health crisis.', jurisdiction: 'us' },
+    { name: 'Poison Control', contact: '1-800-222-1222', note: 'Free, 24/7 help for a suspected medication mistake, overdose, or poisoning.', jurisdiction: 'us' },
+    { name: 'Patient Advocate Foundation', contact: '1-800-532-5274 | patientadvocate.org', note: 'Free case help for insurance denials, prior authorization, and medical debt.', jurisdiction: 'us' },
+    { name: 'NeedyMeds', contact: 'needymeds.org', note: 'Find prescription assistance programs and a free drug-discount card.', jurisdiction: 'us' },
+    { name: 'Health line (811)', contact: 'Call 811 (most provinces)', note: 'Talk to a registered nurse 24/7 about symptoms and whether to seek care.', jurisdiction: 'ca' },
+    { name: '9-8-8 Suicide Crisis Helpline (Canada)', contact: 'Call or text 988', note: 'Free, 24/7 support for a mental health crisis or thoughts of self-harm.', jurisdiction: 'ca' },
+    { name: 'Canadian Mental Health Association', contact: 'cmha.ca', note: 'Local mental health programs, counselling referrals, and support.', jurisdiction: 'ca' },
+  ],
+  legal: [
+    { name: 'The court clerk on your notice', contact: 'Use the phone number or address printed on the document', note: 'Ask the clerk to confirm your deadline, the forms you need, and how to file a response.', jurisdiction: 'international' },
+    { name: '211', contact: 'Call 2-1-1 or visit 211.org', note: 'Free referral line that connects you to local legal aid and support services.', jurisdiction: 'international' },
+    { name: 'LawHelp.org', contact: 'lawhelp.org', note: 'Find free or low-cost legal aid near you by state and legal issue.', jurisdiction: 'us' },
+    { name: 'ABA Free Legal Answers', contact: 'abafreelegalanswers.org', note: 'Ask a volunteer lawyer about a civil legal problem online, for free.', jurisdiction: 'us' },
+    { name: 'Legal Services Corporation', contact: 'lsc.gov/find-legal-aid', note: 'Directory of local civil legal aid offices funded across the US.', jurisdiction: 'us' },
+    { name: 'Legal Aid Ontario', contact: '1-800-668-8258 | legalaid.on.ca', note: 'Free legal help for low-income Ontarians; community legal clinics by area.', jurisdiction: 'ca' },
+    { name: 'CLEO (Community Legal Education Ontario)', contact: 'cleo.on.ca', note: 'Plain-language guides on courts, contracts, and your legal rights.', jurisdiction: 'ca' },
+  ],
+  housing: [
+    { name: '211', contact: 'Call 2-1-1 or visit 211.org', note: 'Free referral line for rent help, utility assistance, and shelter in your area.', jurisdiction: 'international' },
+    { name: 'HUD Housing Counseling', contact: '1-800-569-4287 | hud.gov/findacounselor', note: 'Free HUD-approved counselors for rent, eviction, and tenant questions.', jurisdiction: 'us' },
+    { name: 'LawHelp.org', contact: 'lawhelp.org', note: 'Find free tenant legal aid near you by state and housing issue.', jurisdiction: 'us' },
+    { name: 'Local LIHEAP (utility assistance)', contact: 'acf.hhs.gov/ocs/programs/liheap', note: 'Helps pay heating and cooling bills and can stop a utility shutoff.', jurisdiction: 'us' },
+    { name: 'Landlord and Tenant Board (Ontario)', contact: 'tribunalsontario.ca/ltb', note: 'Handles rent, eviction, and repair disputes between tenants and landlords.', jurisdiction: 'ca' },
+    { name: 'CLEO Steps to Justice — Housing', contact: 'stepstojustice.ca', note: 'Plain-language tenant rights guides and what to do about an eviction notice.', jurisdiction: 'ca' },
+  ],
+  financial_aid: [
+    { name: 'The benefits office on your notice', contact: 'Use the phone number or address printed on the document', note: 'Ask them to confirm your deadline, the exact documents needed, and how to send them.', jurisdiction: 'international' },
+    { name: '211', contact: 'Call 2-1-1 or visit 211.org', note: 'Free referral line for food, cash, health, and utility assistance near you.', jurisdiction: 'international' },
+    { name: 'Benefits.gov', contact: 'benefits.gov', note: 'Check which federal benefit programs you may qualify for and how to apply.', jurisdiction: 'us' },
+    { name: 'Social Security Administration', contact: '1-800-772-1213 | ssa.gov', note: 'Questions about SSI, SSDI, and Social Security benefits and appeals.', jurisdiction: 'us' },
+    { name: 'Ontario Works / ODSP office', contact: 'ontario.ca/page/social-assistance', note: 'Social assistance and disability support; ask about renewals and appeals.', jurisdiction: 'ca' },
+    { name: 'CLEO Steps to Justice — Income assistance', contact: 'stepstojustice.ca', note: 'Plain-language guides on benefits, overpayments, and how to appeal a decision.', jurisdiction: 'ca' },
+  ],
+  school: [
+    { name: 'The school office on your letter', contact: 'Use the phone number or email printed on the document', note: 'Ask them to confirm your deadline, the form you need, and how to appeal or respond.', jurisdiction: 'international' },
+    { name: 'Federal Student Aid', contact: '1-800-433-3243 | studentaid.gov', note: 'FAFSA, student loans, and federal aid questions and deadlines.', jurisdiction: 'us' },
+    { name: 'COPAA (special education advocates)', contact: 'copaa.org', note: 'Helps parents understand IEP/504 rights and find an education advocate.', jurisdiction: 'us' },
+    { name: 'Disability Rights / Protection & Advocacy', contact: 'ndrn.org/about/ndrn-member-agencies', note: 'Free help when school accommodations or special education are denied.', jurisdiction: 'us' },
+    { name: 'OSAP (Ontario Student Assistance Program)', contact: 'ontario.ca/page/osap', note: 'Ontario student grants and loans — eligibility, documents, and deadlines.', jurisdiction: 'ca' },
+    { name: 'Justice for Children and Youth', contact: 'jfcy.org', note: 'Free legal help for students facing suspension, expulsion, or education disputes.', jurisdiction: 'ca' },
+  ],
+  employment: [
+    { name: 'An employment lawyer', contact: 'Search "employment lawyer free consultation" + your area', note: 'Many give a free first consult — have them review anything before you sign it.', jurisdiction: 'international' },
+    { name: 'EEOC (Equal Employment Opportunity Commission)', contact: '1-800-669-4000 | eeoc.gov', note: 'File a workplace discrimination, harassment, or retaliation complaint — note the deadline.', jurisdiction: 'us' },
+    { name: 'US DOL Wage and Hour Division', contact: '1-866-487-9243 | dol.gov/agencies/whd', note: 'Help with unpaid wages, overtime, and final-pay disputes.', jurisdiction: 'us' },
+    { name: 'National Employment Lawyers Association', contact: 'nela.org', note: 'Directory to find an employee-side employment lawyer near you.', jurisdiction: 'us' },
+    { name: 'Ontario Employment Standards', contact: '1-800-531-5551 | ontario.ca/page/your-employment-standards-rights', note: 'Rules on termination, severance, final pay, and how to file a claim.', jurisdiction: 'ca' },
+    { name: 'Service Canada — Employment Insurance', contact: '1-800-206-7218 | canada.ca/ei', note: 'Apply for EI after a layoff — apply as soon as you stop working to avoid losing weeks.', jurisdiction: 'ca' },
+  ],
+};
+
+// Combined jurisdiction signals (union across pipelines). Only one pipeline's
+// resources are ever selected, so this just needs to pick CA vs US.
+const CA_SIGNALS = [
+  "canada", "ontario", "provincial", "ircc", "irpa", "prra", "ohip", "odsp",
+  "ontario works", "osap", "service canada", "employment insurance",
+  "record of employment", "landlord and tenant board", "legal aid ontario", "cleo",
+];
+const US_SIGNALS = [
+  "uscis", "daca", "medicare", "medicaid", "social security", "snap", "section 8",
+  "hud", "fafsa", "iep", "504 plan", "eeoc", "cobra", "at-will", "state court", "liheap",
+];
+
+/**
+ * Merge curated who_can_help resources into the analysis — mirrors the per-pipeline
+ * enrichResponse() in src/agents/pipelines/*.js. Filtered by a rough US/CA guess,
+ * deduplicated by name, capped at 4 additions.
+ */
+function enrichWhoCanHelp(
+  analysis: Record<string, unknown>,
+  pipelineType: string,
+): Record<string, unknown> {
+  const list = PIPELINE_RESOURCES[pipelineType];
+  if (!list) return analysis;
+
+  const current = Array.isArray(analysis.who_can_help)
+    ? analysis.who_can_help as Array<Record<string, unknown>>
+    : [];
+  const existing = new Set(current.map((r) => String(r?.name)));
+
+  const text = JSON.stringify(analysis).toLowerCase();
+  const isCanada = CA_SIGNALS.some((s) => text.includes(s));
+  const isUS = !isCanada || US_SIGNALS.some((s) => text.includes(s));
+
+  const relevant = list.filter((r) =>
+    r.jurisdiction === "international" ||
+    (isCanada && r.jurisdiction === "ca") ||
+    (isUS && r.jurisdiction === "us")
+  );
+
+  const toAdd = relevant.filter((r) => !existing.has(r.name)).slice(0, 4);
+
+  return { ...analysis, who_can_help: [...current, ...toAdd] };
 }
