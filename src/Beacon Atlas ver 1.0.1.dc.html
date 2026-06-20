@@ -22,6 +22,64 @@
   @keyframes ba-scan{0%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
   @keyframes ba-blink{0%,100%{opacity:1}50%{opacity:.25}}
   @keyframes ba-rise{0%{opacity:0;transform:translateY(40px)}100%{opacity:1;transform:translateY(0)}}
+
+  /* ===================== MOBILE / RESPONSIVE ===================== */
+  /* The landing markup is desktop-first inline styles; these media
+     queries override the layout-critical ones at small widths. Inline
+     styles win on specificity, so overrides use !important. Selectors
+     here only match elements inside the landing root. */
+  @media (max-width:820px){
+    /* Nav: drop the center links (the smooth-scroll jumps), tighten the
+       row and the CTA so the logo + button fit a phone width. */
+    [data-nav]{padding:16px clamp(16px,4vw,24px) !important;gap:12px !important;}
+    [data-nav] > div{display:none !important;}
+    [data-nav] > button{padding:9px 13px !important;gap:10px !important;font-size:12px !important;}
+
+    /* Roomy desktop section padding → compact on phones. */
+    [data-beacon-root] [style*="padding:160px 32px"],
+    [data-beacon-root] [style*="padding:150px 32px"]{
+      padding-top:90px !important;padding-bottom:90px !important;
+      padding-left:20px !important;padding-right:20px !important;
+    }
+
+    /* Two-column feature/visual grids → single column. */
+    #sec-security > div{grid-template-columns:1fr !important;gap:40px !important;}
+    #sec-global > div{grid-template-columns:1fr !important;gap:28px !important;padding:90px 20px 40px !important;}
+
+    /* Connected-tools 3-up grid → single column. */
+    [data-beacon-root] [style*="grid-template-columns:repeat(3,1fr)"]{
+      grid-template-columns:1fr !important;
+    }
+
+    /* Transformation scene: the "document → action cards" row is a wide
+       flex; stack it and drop the horizontal connector. The JS only
+       animates transforms/opacity, so vertical stacking is safe. */
+    [data-scene="transform"] > div > div:last-child{
+      flex-direction:column !important;gap:14px !important;
+    }
+    [data-tconn]{display:none !important;}
+    [data-tdoc]{width:min(78vw,300px) !important;}
+    [data-scene="transform"] > div > div:last-child > div:last-child{
+      width:100% !important;flex-basis:auto !important;max-width:520px !important;
+    }
+
+    /* Global scene globe: shrink so the stacked text + visual fit. */
+    #sec-global canvas{width:min(64vw,300px) !important;height:min(64vw,300px) !important;}
+  }
+
+  @media (max-width:560px){
+    /* Problem scene: the scattered chips settle into a 2-col grid that is
+       cramped on small phones — go single column. */
+    [data-clarity] [style*="grid-template-columns:1fr 1fr"]{
+      grid-template-columns:1fr !important;
+    }
+    /* Global stats wrap instead of overflowing. */
+    [data-global-stats]{flex-wrap:wrap !important;gap:20px 28px !important;}
+    /* Footer: stack the three rows. */
+    [data-beacon-root] [style*="border-top:1px solid var(--border)"][style*="space-between"]{
+      flex-direction:column !important;align-items:flex-start !important;gap:18px !important;
+    }
+  }
 </style>
 </helmet>
 <div ref="{{ rootRef }}" style="--bg:#06070e;--bg2:#0a0c16;--panel:rgba(255,255,255,.04);--border:rgba(255,255,255,.09);--text:#eef1f7;--muted:#98a2bb;--faint:#5a637c;--a:#5b8cff;--b:#a06bff;background:var(--bg);color:var(--text);font-family:'Archivo',sans-serif,system-ui,sans-serif;overflow-x:clip;position:relative;">
