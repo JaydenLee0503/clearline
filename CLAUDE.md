@@ -1,16 +1,16 @@
-# CLAUDE.md — Beacon Atlas
+# CLAUDE.md — Clearline
 
 Guidance for Claude Code (and humans) working in this repository. Read this before making changes.
 
-> Naming note: the product is now called **Beacon Atlas** (renamed from "Resilience Hub", which
-> remains the git repo / folder name and an internal codename). Use **Beacon Atlas** in all
+> Naming note: the product is now called **Clearline** (renamed from "Clearline", which
+> remains the git repo / folder name and an internal codename). Use **Clearline** in all
 > user-facing product copy. See §12.
 
 ---
 
 ## 1. Project Overview
 
-Beacon Atlas is a secure, privacy-first AI platform that turns life-critical documents and
+Clearline is a secure, privacy-first AI platform that turns life-critical documents and
 urgent emails into calm, structured action plans. A user uploads a document (or, later, connects
 Gmail); the AI reads it and returns a clear plan: what matters, what happens if it is ignored,
 what to do next, who can help, and a checklist.
@@ -143,7 +143,7 @@ resilience-hub/
 │  └─ main.jsx
 ├─ server/ (or supabase/functions/)  # Server-side AI calls; holds ANTHROPIC_API_KEY
 ├─ supabase/               # migrations, RLS policies (if using Supabase CLI)
-├─ legacy/                 # Beacon Atlas landing template (do not edit casually)
+├─ legacy/                 # Clearline landing template (do not edit casually)
 ├─ public/
 └─ CLAUDE.md
 ```
@@ -227,8 +227,8 @@ outside the object. Empty arrays are allowed; do not omit keys.
 - Agent / pipeline modules: `camelCase` files (`immigration.js`, `guardian.js`).
 - DB tables: `snake_case`, plural (`documents`, `analyses`).
 - Env vars: `SCREAMING_SNAKE_CASE`; client-exposed ones must be `VITE_`-prefixed and non-secret.
-- The product name is **Beacon Atlas** (renamed from "Resilience Hub"). Use **Beacon Atlas** in all
-  user-facing product copy. "Resilience Hub" survives only as the git repo / folder name, an internal
+- The product name is **Clearline** (renamed from "Clearline"). Use **Clearline** in all
+  user-facing product copy. "Clearline" survives only as the git repo / folder name, an internal
   codename, and in code comments / AI system prompts — never show it in the UI.
 
 ---

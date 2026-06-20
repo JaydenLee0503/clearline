@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Beacon Atlas",
+  "name": "Clearline",
   "version": "0.2.1",
-  "description": "Summarize or send the current PDF/page to Beacon Atlas. PII is tokenized in your browser before any AI sees it.",
+  "description": "Summarize or send the current PDF/page to Clearline. PII is tokenized in your browser before any AI sees it.",
   "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": ["<all_urls>"],
   "action": {
-    "default_title": "Beacon Atlas",
+    "default_title": "Clearline",
     "default_popup": "popup.html"
   },
   "options_page": "options.html"

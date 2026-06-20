@@ -201,7 +201,7 @@ export function ProductNav({ onBack, account, onLogout, historyOpen, onToggleHis
 
       <div className="product-brand">
         <span className="brand-pulse" />
-        Beacon Atlas
+        Clearline
       </div>
 
       <div className="nav-side nav-right">

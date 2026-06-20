@@ -9,9 +9,9 @@ export async function addDeadlineToGoogleCalendar(deadline) {
 
   const accessToken = await requestCalendarToken();
   const { start, end } = parseDeadlineDate(deadline.date);
-  const summary = deadline.task || 'Resilience Hub deadline';
+  const summary = deadline.task || 'Clearline deadline';
   const description = [
-    'Added from Resilience Hub.',
+    'Added from Clearline.',
     deadline.consequence ? `If missed: ${deadline.consequence}` : '',
     deadline.date ? `Original extracted date: ${deadline.date}` : '',
   ].filter(Boolean).join('\n\n');

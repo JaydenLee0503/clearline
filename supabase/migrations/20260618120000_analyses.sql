@@ -1,4 +1,4 @@
--- Resilience Hub — Phase 2 schema
+-- Clearline — Phase 2 schema
 --
 -- `analyses` stores the structured crisis plan (CLAUDE.md §10) for each user.
 -- We store the re-hydrated plan (the owner's own data), NOT the raw document —

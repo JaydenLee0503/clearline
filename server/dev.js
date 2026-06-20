@@ -37,15 +37,24 @@ try {
 }
 
 const API_KEY = process.env.FEATHERLESS_API_KEY;
+const FOURSQUARE_KEY = normalizeFoursquareKey(process.env.FOURSQUARE_KEY);
 const FEATHERLESS_BASE_URL = process.env.FEATHERLESS_BASE_URL || 'https://api.featherless.ai/v1';
 const FEATHERLESS_MODEL = process.env.FEATHERLESS_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
 if (!API_KEY) {
   console.warn('[server/dev.js] FEATHERLESS_API_KEY is not set. Server will return demo-mode analyses.');
 }
 
+function normalizeFoursquareKey(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+}
+
 // Follow-up chat — answers questions from an already-analyzed report.
 // The context it receives is tokenized (no real PII); tokens must be preserved.
-const CHAT_SYSTEM_PROMPT = `You are a calm follow-up assistant inside Resilience Hub. The user already received a structured action plan for a stressful document. Answer their question using ONLY the report context provided.
+const CHAT_SYSTEM_PROMPT = `You are a calm follow-up assistant inside Clearline. The user already received a structured action plan for a stressful document. Answer their question using ONLY the report context provided.
 
 The context is privacy-tokenized: real dates, amounts, names, and IDs appear as tokens like [DATE_1] or [AMOUNT_1]. Keep these tokens EXACTLY as they appear. Never invent or guess the real value behind a token.
 
@@ -54,7 +63,7 @@ If the answer is not in the context, say you do not see it in the report and sug
 // Quick summarizer for the Chrome extension — condenses a page/PDF into a short
 // plain-language brief. The text it receives is tokenized (no real PII); tokens
 // must be preserved exactly so the device can re-hydrate them for the user.
-const SUMMARIZE_SYSTEM_PROMPT = `You are a concise summarizer inside Beacon Atlas. Summarize the document the user gives you so a stressed person can grasp it fast.
+const SUMMARIZE_SYSTEM_PROMPT = `You are a concise summarizer inside Clearline. Summarize the document the user gives you so a stressed person can grasp it fast.
 
 The text is privacy-tokenized: real dates, amounts, names, and IDs appear as tokens like [DATE_1] or [AMOUNT_1]. Keep these tokens EXACTLY as they appear. Never invent or guess the real value behind a token.
 
@@ -102,7 +111,7 @@ async function loadPipelines() {
   };
 
   const FALLBACK_PROMPT = `
-You are a document intelligence assistant inside Resilience Hub.
+You are a document intelligence assistant inside Clearline.
 You may be acting as any Specialized Crisis Pipeline: immigration, medical, school, legal, financial_aid, housing, employment, or common.
 Analyze the tokenized document and return ONE JSON object matching this exact shape:
 {
@@ -159,6 +168,10 @@ async function handleRequest(req, res, pipelines) {
 
   if (req.method === 'POST' && req.url === '/api/summarize') {
     return handleSummarize(req, res);
+  }
+
+  if (req.method === 'POST' && req.url === '/api/find-support') {
+    return handleFindSupport(req, res);
   }
 
   if (req.method !== 'POST' || req.url !== '/api/analyze') {
@@ -271,6 +284,141 @@ async function handleRequest(req, res, pipelines) {
 }
 
 // ─── Follow-up chat handler ──────────────────────────────────────────────────
+async function handleFindSupport(req, res) {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+
+  let pipelineType, location;
+  try {
+    ({ pipelineType, location } = JSON.parse(body));
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json', ...getCorsHeaders(req.headers.origin || '') });
+    res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+    return;
+  }
+
+  if (!location || typeof location !== 'string') {
+    res.writeHead(400, { 'Content-Type': 'application/json', ...getCorsHeaders(req.headers.origin || '') });
+    res.end(JSON.stringify({ error: 'location is required' }));
+    return;
+  }
+
+  if (!FOURSQUARE_KEY) {
+    res.writeHead(503, { 'Content-Type': 'application/json', ...getCorsHeaders(req.headers.origin || '') });
+    res.end(JSON.stringify({ error: 'FOURSQUARE_KEY is not set on the server.' }));
+    return;
+  }
+
+  const query = supportQueryForPipeline(pipelineType);
+  const params = new URLSearchParams({
+    near: location.trim(),
+    query,
+    limit: '8',
+    sort: 'DISTANCE',
+  });
+
+  let fsqRes;
+  try {
+    fsqRes = await fetchFoursquarePlaces(params);
+  } catch (err) {
+    console.error('[find-support] Foursquare fetch failed:', err.message);
+    res.writeHead(502, { 'Content-Type': 'application/json', ...getCorsHeaders(req.headers.origin || '') });
+    res.end(JSON.stringify({ error: 'Failed to reach Foursquare Places.' }));
+    return;
+  }
+
+  if (!fsqRes.ok) {
+    const errBody = await fsqRes.text().catch(() => '');
+    console.error(`[find-support] Foursquare error ${fsqRes.status}:`, errBody.slice(0, 200));
+    res.writeHead(502, { 'Content-Type': 'application/json', ...getCorsHeaders(req.headers.origin || '') });
+    const message = fsqRes.status === 401
+      ? 'Foursquare rejected FOURSQUARE_KEY. Use a Places API key from the Foursquare Developer Console, paste the raw key without "Bearer", then restart the dev server.'
+      : fsqRes.status === 410
+        ? 'Foursquare rejected the Places endpoint as retired. Restart the dev server so Clearline uses the updated Foursquare Places API endpoint.'
+        : `Foursquare Places error: ${fsqRes.status}`;
+    res.end(JSON.stringify({ error: message }));
+    return;
+  }
+
+  const data = await fsqRes.json();
+  const origin = readFoursquareOrigin(data);
+  const sourceResults = data.results || data.places || data.data || [];
+  const results = sourceResults.map((place) => {
+    const coords = readFoursquareCoords(place);
+    return {
+      id: place.fsq_id || place.fsq_place_id || place.id,
+      name: place.name,
+      address: readFoursquareAddress(place),
+      phone: place.tel || place.telephone || place.phone || '',
+      distanceMeters: typeof place.distance === 'number' ? place.distance : null,
+      lat: coords?.lat,
+      lng: coords?.lng,
+    };
+  }).filter((place) => place.name && Number.isFinite(place.lat) && Number.isFinite(place.lng));
+
+  res.writeHead(200, { 'Content-Type': 'application/json', ...getCorsHeaders(req.headers.origin || '') });
+  res.end(JSON.stringify({ query, location: location.trim(), origin, results }));
+}
+
+async function fetchFoursquarePlaces(params) {
+  const url = `https://places-api.foursquare.com/places/search?${params.toString()}`;
+  const headers = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${FOURSQUARE_KEY}`,
+    'X-Places-Api-Version': '2025-06-17',
+  };
+
+  const first = await fetch(url, { headers });
+  if (first.status !== 401) return first;
+
+  return fetch(url, {
+    headers: {
+      ...headers,
+      Authorization: FOURSQUARE_KEY,
+    },
+  });
+}
+
+function readFoursquareOrigin(data) {
+  const center = data.context?.geo_bounds?.circle?.center || data.context?.geo_bounds?.center;
+  if (!center) return null;
+  const lat = center.latitude || center.lat;
+  const lng = center.longitude || center.lng;
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function readFoursquareCoords(place) {
+  const geo = place.geocodes?.main || place.geocodes?.roof || place.geocodes?.drop_off;
+  const latitude = geo?.latitude || place.latitude || place.lat || place.location?.latitude || place.location?.lat;
+  const longitude = geo?.longitude || place.longitude || place.lng || place.location?.longitude || place.location?.lng;
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? { lat: latitude, lng: longitude }
+    : null;
+}
+
+function readFoursquareAddress(place) {
+  const location = place.location || {};
+  return location.formatted_address
+    || location.formattedAddress
+    || [location.address, location.locality || location.city, location.region, location.postcode || location.postal_code]
+      .filter(Boolean)
+      .join(', ');
+}
+
+function supportQueryForPipeline(pipelineType = 'common') {
+  const queries = {
+    immigration: 'immigration office legal aid',
+    medical: 'free health clinic community health center',
+    school: 'education advocacy special education support',
+    legal: 'legal aid office',
+    financial_aid: 'benefits office financial assistance',
+    housing: 'housing assistance tenant legal aid',
+    employment: 'employment legal aid workers rights',
+    common: 'community legal aid social services',
+  };
+  return queries[pipelineType] || queries.common;
+}
+
 async function handleChat(req, res) {
   let body = '';
   for await (const chunk of req) body += chunk;
@@ -551,8 +699,8 @@ loadPipelines().then((pipelines) => {
   });
 
   server.listen(PORT, () => {
-    console.log(`\n[Resilience Hub dev server] listening on http://localhost:${PORT}`);
-    console.log(`[Resilience Hub dev server] API key: ${API_KEY ? 'set ✓' : 'missing (demo mode)'}`);
-    console.log('[Resilience Hub dev server] Routes: POST /api/analyze, /api/chat, /api/summarize\n');
+    console.log(`\n[Clearline dev server] listening on http://localhost:${PORT}`);
+    console.log(`[Clearline dev server] API key: ${API_KEY ? 'set ✓' : 'missing (demo mode)'}`);
+    console.log('[Clearline dev server] Routes: POST /api/analyze, /api/chat, /api/summarize, /api/find-support\n');
   });
 });

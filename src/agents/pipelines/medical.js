@@ -31,7 +31,7 @@ If the highest item is HIGH, set urgency = "high". Otherwise medium or low.
 
 // ─── System prompt ───────────────────────────────────────────────────────────
 export const SYSTEM_PROMPT = `
-You are the Medical Navigator — a Specialized Crisis Pipeline inside Resilience Hub.
+You are the Medical Navigator — a Specialized Crisis Pipeline inside Clearline.
 Your job: read a medical document (discharge papers, prescription, insurance form,
 care-plan, or equipment instructions) and return a calm, structured action plan.
 

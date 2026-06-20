@@ -1,4 +1,4 @@
-// Beacon Atlas — Chrome extension popup.
+// Clearline — Chrome extension popup.
 //
 // Two extraction paths, picked automatically:
 //   1. PDF tab  → Chrome's native PDF viewer cannot be read by content scripts,
@@ -58,7 +58,7 @@ async function run() {
 
     const settings = await getSettings();
     await openInApp(clean, source || tab.title || 'Chrome import', settings.appUrl);
-    setStatus('Sent to Beacon Atlas. Sign in if the dashboard asks.');
+    setStatus('Sent to Clearline. Sign in if the dashboard asks.');
   } catch (error) {
     setStatus(error.message || 'Could not send this tab.', true);
   } finally {

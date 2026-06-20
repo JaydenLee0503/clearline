@@ -1,4 +1,4 @@
-// Beacon Atlas extension — settings page.
+// Clearline extension — settings page.
 // Stores the backend endpoints in chrome.storage.local so the popup can target
 // either the local dev server or a deployed Supabase Edge Function.
 

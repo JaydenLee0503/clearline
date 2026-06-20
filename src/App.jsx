@@ -2,7 +2,7 @@
  * App.jsx — ResilienceHub
  *
  * State machine:
- *   'landing'   → Beacon Atlas marketing page (existing template)
+ *   'landing'   → Clearline marketing page (existing template)
  *   'upload'    → UploadZone (document input)
  *   'analyzing' → Processing state (Guardian + Simplifier running)
  *   'results'   → CrisisActionRoom (analysis output)
@@ -12,7 +12,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import beaconSource from '../src/Beacon Atlas ver 1.0.1.dc.html?raw';
+import beaconSource from '../src/Clearline ver 1.0.1.dc.html?raw';
 
 import CrisisActionRoom from './components/CrisisActionRoom';
 import AuthGate from './components/AuthGate';
@@ -28,7 +28,7 @@ import { geoOrthographic, geoPath, geoGraticule10 } from 'd3-geo';
 import { merge as topoMerge, mesh as topoMesh } from 'topojson-client';
 import worldData from './data/world-110m.json';
 
-// ─── Beacon Atlas template helpers (unchanged from original) ───────────────
+// ─── Clearline template helpers (unchanged from original) ───────────────
 
 // The headline the .dc.html ships with as its default (see data-props in the file).
 const HEADLINE = 'Understand any document. Act in time.';
@@ -42,7 +42,7 @@ function buildBeaconTemplate() {
   if (!root) {
     return {
       style,
-      markup: '<div data-beacon-root>Beacon Atlas template could not be loaded.</div>',
+      markup: '<div data-beacon-root>Clearline template could not be loaded.</div>',
     };
   }
 
@@ -580,7 +580,7 @@ function useBeaconAnimations(hostRef, active = true) {
     const safeTick = () => {
       try { tick(); }
       catch (error) {
-        if (!warned) { console.warn('Beacon Atlas animation tick failed', error); warned = true; }
+        if (!warned) { console.warn('Clearline animation tick failed', error); warned = true; }
       }
     };
 

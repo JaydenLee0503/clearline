@@ -1,6 +1,6 @@
-# Resilience Hub
+# Clearline
 
-Resilience Hub is a privacy-first document intelligence platform built around Specialized Crisis Pipelines. Users upload sensitive documents - immigration paperwork, medical discharge forms, school notices, legal letters, financial aid forms, housing documents, or employment contracts - and the AI reads them and returns exactly three things: what matters, what happens if ignored, and what to do next. It also generates a checklist and surfaces local support resources. Every document is tokenized before any AI sees it, keeping personal data protected. Additional features include a Gmail reader that scans for crisis-related emails and a Chrome Extension that reads PDFs open in the browser. Resilience Hub exists because no one should miss a deadline, lose a benefit, or misunderstand their rights because the paperwork was too hard to read.
+Clearline is a privacy-first document intelligence platform built around Specialized Crisis Pipelines. Users upload sensitive documents - immigration paperwork, medical discharge forms, school notices, legal letters, financial aid forms, housing documents, or employment contracts - and the AI reads them and returns exactly three things: what matters, what happens if ignored, and what to do next. It also generates a checklist and surfaces local support resources. Every document is tokenized before any AI sees it, keeping personal data protected. Additional features include a Gmail reader that scans for crisis-related emails and a Chrome Extension that reads PDFs open in the browser. Clearline exists because no one should miss a deadline, lose a benefit, or misunderstand their rights because the paperwork was too hard to read.
 
 ## What It Does
 

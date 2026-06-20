@@ -1,7 +1,7 @@
-# Beacon Atlas — Chrome extension
+# Clearline — Chrome extension
 
 An unpacked Chrome extension (Manifest V3) that pulls the text out of the tab you're
-looking at and drops it into your local Beacon Atlas dashboard, ready to analyze.
+looking at and drops it into your local Clearline dashboard, ready to analyze.
 
 ## What it does
 
@@ -39,7 +39,7 @@ Text extraction works on:
 
 1. Make sure the app is running locally (`npm run dev:all`, dashboard at `http://localhost:5173`).
 2. Open a PDF or a page in Chrome.
-3. Click the **Beacon Atlas** toolbar icon → **Send to dashboard**.
+3. Click the **Clearline** toolbar icon → **Send to dashboard**.
 4. A new tab opens at the dashboard with the extracted text already loaded. Sign in if asked,
    pick a navigator, and analyze.
 

@@ -26,7 +26,7 @@ If the highest item is HIGH, set urgency = "high". Otherwise medium or low.
 `.trim();
 
 export const SYSTEM_PROMPT = `
-You are the Workplace Rights Navigator — a Specialized Crisis Pipeline inside Resilience Hub.
+You are the Workplace Rights Navigator — a Specialized Crisis Pipeline inside Clearline.
 Your job: read an employment document (job contract, termination or layoff notice, severance
 offer, HR policy, non-compete/NDA/arbitration agreement, or a final-pay dispute) and return a
 calm, structured action plan.

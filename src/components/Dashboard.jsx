@@ -324,19 +324,19 @@ export default function Dashboard({
             <div className="ext-panel">
               <div className="ext-row">
                 <div>
-                  <strong>Beacon Atlas for Chrome</strong>
+                  <strong>Clearline for Chrome</strong>
                   <span>
                     Read the PDF or page in your current browser tab and send its text straight
                     to this dashboard. PII is tokenized in your browser before any AI sees it.
                   </span>
                 </div>
-                <a className="primary-action" href="/beacon-atlas-extension.zip" download>Download .zip</a>
+                <a className="primary-action" href="/clearline-extension.zip" download>Download .zip</a>
               </div>
               <ol className="ext-steps">
                 <li>Unzip the download, then open <code>chrome://extensions</code>.</li>
                 <li>Turn on <strong>Developer mode</strong>, then click <strong>Load unpacked</strong>.</li>
-                <li>Select the unzipped <code>beacon-atlas-extension</code> folder.</li>
-                <li>Open a PDF or page, click the Beacon Atlas icon, then <strong>Send to dashboard</strong>.</li>
+                <li>Select the unzipped <code>clearline-extension</code> folder.</li>
+                <li>Open a PDF or page, click the Clearline icon, then <strong>Send to dashboard</strong>.</li>
               </ol>
               <p className="ext-foot">
                 For local <code>file://</code> PDFs, enable “Allow access to file URLs” on the

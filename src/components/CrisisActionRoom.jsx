@@ -4,9 +4,10 @@ import { runChat } from '../agents/chat';
 import { PIPELINE_LABELS } from '../agents/pipelines/classifier';
 import { downloadPdfReport, downloadTextReport } from '../lib/reportExport';
 import { addDeadlineToGoogleCalendar } from '../lib/googleCalendar';
+import FindNearestHelp from './FindNearestHelp';
 
 /**
- * CrisisActionRoom — renders the canonical Resilience Hub output schema.
+ * CrisisActionRoom — renders the canonical Clearline output schema.
  *
  * Design: Inter typeface, sharp editorial layout. Sections are separated by
  * hairlines (no rounded cards); accents use square swatches and left rules.
@@ -118,7 +119,7 @@ export default function CrisisActionRoom({ analysis, mappingTable, guardianStats
         </div>
         <div className="product-brand report-product-brand">
           <span className="brand-pulse" />
-          <span>Beacon Atlas</span>
+          <span>Clearline</span>
           {d.pipeline_type && (
             <span className="report-mono report-pipeline-chip">
               {PIPELINE_LABELS[d.pipeline_type] ?? d.pipeline_type}
@@ -279,6 +280,8 @@ export default function CrisisActionRoom({ analysis, mappingTable, guardianStats
         )}
 
         {/* ── Privacy trace: what happened to your data during this analysis ── */}
+        <FindNearestHelp report={d} mappingTable={mappingTable} />
+
         <PrivacyTrace guardianStats={guardianStats} />
 
         {/* ── Disclaimer ── */}
