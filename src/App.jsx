@@ -389,9 +389,11 @@ function useBeaconAnimations(hostRef, active = true) {
       // Tilted 3D orbit rings; lengths are in the 240px design unit, scaled by s.
       const ELEV = 0.30;
       const sinE = Math.sin(ELEV), cosE = Math.cos(ELEV);
+      // Blue ring sits at phi = -0.34; the purple ring is rotated a quarter
+      // turn from it so it reads as perpendicular to the blue orbit.
       const rings = [
         { rad: 206, phi: -0.34, w: 1.6, alpha: 0.55, color: accentA },
-        { rad: 238, phi: -0.20, w: 1.1, alpha: 0.32, color: accentB },
+        { rad: 238, phi: -0.34 + Math.PI / 2, w: 1.1, alpha: 0.32, color: accentB },
       ];
       const particles = [];
       for (let i = 0; i < 22; i++) {
@@ -913,6 +915,7 @@ export default function App() {
           onDashboard={handleReset}
         />
       )}
+
     </>
   );
 }
