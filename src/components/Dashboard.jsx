@@ -240,7 +240,6 @@ export default function Dashboard({
             <button className={inputMode === 'document' ? 'active' : ''} onClick={() => setInputMode('document')}>PDF / text</button>
             <button className={inputMode === 'gmail' ? 'active' : ''} onClick={() => setInputMode('gmail')}>Gmail reader</button>
             <button className={inputMode === 'extension' ? 'active' : ''} onClick={() => setInputMode('extension')}>Browser extension</button>
-            <button type="button" className="primary-action calendar-cta" disabled={true}>Connect calendar</button>
           </div>
 
           {inputMode === 'document' && (
