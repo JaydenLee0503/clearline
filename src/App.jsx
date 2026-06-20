@@ -527,7 +527,16 @@ function useBeaconAnimations(hostRef, active = true) {
       if (!target) return;
       event.preventDefault();
       const navHeight = nav ? nav.getBoundingClientRect().height : 72;
-      const destY = Math.max(0, window.scrollY + target.getBoundingClientRect().top - navHeight - 12);
+      const rect = target.getBoundingClientRect();
+      const sectionTopAbs = window.scrollY + rect.top;
+      let destY = Math.max(0, sectionTopAbs - navHeight - 12);
+      // Pinned scenes reveal their content partway through their scroll length.
+      // The Global scene's text fades in by progress ~0.35 (see sceneGlobal), so
+      // landing at the section top leaves it invisible — aim deeper so it shows.
+      if (target.getAttribute('data-scene') === 'global') {
+        const total = rect.height - window.innerHeight;
+        if (total > 0) destY = Math.max(0, sectionTopAbs + total * 0.42);
+      }
       smoothScrollTo(destY);
     };
     jumpLinks.forEach((link) => link.addEventListener('click', onJump));
