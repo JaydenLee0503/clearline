@@ -7,6 +7,8 @@
     "dev": "vite --host localhost",
     "dev:server": "node server/dev.js",
     "dev:all": "concurrently -n vite,server -c cyan,yellow \"npm run dev\" \"npm run dev:server\"",
+    "build:extension": "node scripts/build-extension-zip.mjs",
+    "prebuild": "node scripts/build-extension-zip.mjs",
     "build": "vite build --outDir dist --emptyOutDir",
     "preview": "vite preview"
   },
