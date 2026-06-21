@@ -9,10 +9,21 @@
 // tokenizes PII in the browser before anything reaches the AI. The extension
 // never sends document text anywhere except the local dashboard tab.
 
-import * as pdfjsLib from './vendor/pdf.min.mjs';
 import { runGuardian } from './vendor/guardian.js';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.min.mjs');
+// pdf.js is loaded lazily — only when a PDF is actually parsed. A problem loading
+// the large bundled library then can never stop the popup's buttons from working;
+// page-text summarize and "send to dashboard" don't need it.
+let pdfjsLibPromise = null;
+function loadPdfLib() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import('./vendor/pdf.min.mjs').then((lib) => {
+      lib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.min.mjs');
+      return lib;
+    });
+  }
+  return pdfjsLibPromise;
+}
 
 // Backend endpoints are configurable on the options page. The defaults point at
 // the deployed Supabase Edge Function + Vercel dashboard so the extension works
@@ -218,6 +229,7 @@ async function tryPdfFromUrl(url) {
 }
 
 async function extractPdfText(data) {
+  const pdfjsLib = await loadPdfLib();
   const pdf = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
   const pages = [];
 
